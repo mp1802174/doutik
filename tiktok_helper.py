@@ -447,6 +447,9 @@ async def do_upload(
     title: str,
     tags: list[str],
 ) -> None:
+    # ★ 固定标题和标签，忽略 CLI 传入的值
+    FIXED_TITLE = "中国街拍美女"
+    FIXED_TAGS = ["dance", "beautiful girl"]
     print(f"[tiktok_helper] 检查 Cookie 有效性...")
     if not Path(account_file).exists():
         print(f"[tiktok_helper] ERROR: Cookie 文件不存在: {account_file}", file=sys.stderr)
@@ -458,13 +461,13 @@ async def do_upload(
         sys.exit(1)
 
     print(f"[tiktok_helper] 开始上传: {video_path}")
-    print(f"[tiktok_helper] 标题: {title}")
-    print(f"[tiktok_helper] 标签: {tags}")
+    print(f"[tiktok_helper] 标题(固定): {FIXED_TITLE}")
+    print(f"[tiktok_helper] 标签(固定): {FIXED_TAGS}")
 
     app = RobustTiktokVideo(
-        title=title,
+        title=FIXED_TITLE,
         file_path=video_path,
-        tags=tags,
+        tags=FIXED_TAGS,
         publish_date=0,
         account_file=account_file,
     )

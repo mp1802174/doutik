@@ -1,30 +1,37 @@
 import asyncio
+import random
+import time
 from pathlib import Path
 
 from conf import BASE_DIR
-# from tk_uploader.main import tiktok_setup, TiktokVideo
-from uploader.tk_uploader.main_chrome import tiktok_setup, TiktokVideo
-from utils.files_times import generate_schedule_time_next_day, get_title_and_hashtags
+from tiktok_helper import do_upload
 
 
 if __name__ == '__main__':
     filepath = Path(BASE_DIR) / "videos"
-    account_file = Path(BASE_DIR / "cookies" / "tk_uploader" / "account.json")
+    account_file = Path(BASE_DIR / "cookies" / "tiktok_default.json")
     folder_path = Path(filepath)
-    # get video files from folder
-    files = list(folder_path.glob("*.mp4"))
-    file_num = len(files)
-    publish_datetimes = generate_schedule_time_next_day(file_num, 1, daily_times=[16])
-    cookie_setup = asyncio.run(tiktok_setup(account_file, handle=True))
+
+    # 每次运行最多上传10个视频
+    MAX_UPLOAD_PER_RUN = 10
+    files = sorted(list(folder_path.glob("*.mp4")))[:MAX_UPLOAD_PER_RUN]
+    print(f"[main] 本次将上传 {len(files)} 个视频 (最多 {MAX_UPLOAD_PER_RUN} 个)")
+
     for index, file in enumerate(files):
-        title, tags = get_title_and_hashtags(str(file))
-        thumbnail_path = file.with_suffix('.png')
-        print(f"video_file_name：{file}")
-        print(f"video_title：{title}")
-        print(f"video_hashtag：{tags}")
-        if thumbnail_path.exists():
-            print(f"thumbnail_file_name：{thumbnail_path}")
-            app = TiktokVideo(title, file, tags, publish_datetimes[index], account_file, thumbnail_path)
-        else:
-            app = TiktokVideo(title, file, tags, publish_datetimes[index], account_file)
-        asyncio.run(app.main(), debug=False)
+        print(f"\n[main] ===== 开始上传第 {index + 1}/{len(files)} 个视频 =====")
+        print(f"[main] video_file_name：{file}")
+
+        try:
+            asyncio.run(do_upload(str(account_file), str(file), "", []))
+            print(f"[main] ✅ 第 {index + 1} 个视频上传完成")
+        except Exception as e:
+            print(f"[main] ❌ 第 {index + 1} 个视频上传失败: {e}")
+
+        # 上传间隔 5-10 分钟随机
+        if index < len(files) - 1:
+            wait_seconds = random.randint(300, 600)
+            minutes = wait_seconds // 60
+            print(f"[main] ⏳ 等待 {minutes} 分钟后上传下一个视频...")
+            time.sleep(wait_seconds)
+
+    print(f"\n[main] ===== 本次上传流程结束，共处理 {len(files)} 个视频 =====")
