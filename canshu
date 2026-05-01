@@ -1,0 +1,131 @@
+# ============================================
+# Douyin-TikTok Pipeline 参数总览
+# ============================================
+
+# 一、config.yaml（根目录，核心配置文件，共 38 项）
+# -------------------------------------------------------------------------------------------------
+# | 参数路径                          | 当前值示例                          | 说明                     | 必填/常用 |
+# -------------------------------------------------------------------------------------------------
+# | pipeline.direction                 | douyin_to_tiktok                    | 搬运方向                  | 必填     |
+# | pipeline.batch_size                | 5                                   | 每批处理视频数量           | 常用     |
+# | pipeline.schedule_interval_minutes | 300                                 | 定时调度间隔（分钟）       | 常用     |
+# | pipeline.cleanup_after_upload      | true                                | 上传成功后删除本地文件     | 常用     |
+# | pipeline.timezone                  | Asia/Shanghai                       | 时区                     | 一般不改 |
+# | pipeline.max_workers               | 2                                   | 并发工作线程数             | 一般不改 |
+# | downloader.f2_config               | ./my_apps.yaml                      | f2 配置文件路径            | 必填     |
+# | downloader.douyin_user_url         | https://www.douyin.com/user/...     | 抖音用户主页 URL           | 条件必填 |
+# | downloader.tiktok_user_url         | ''                                  | TikTok 用户主页 URL        | 条件必填 |
+# | downloader.download_dir            | ./download                          | 下载输出目录               | 一般不改 |
+# | downloader.timeout                 | 120                                 | 下载超时（秒）             | 可选     |
+# | downloader.download_delay          | 3                                   | 下载间隔（秒）             | 可选     |
+# | deduplicator.output_dir            | ./dedup                             | 去重输出目录               | 一般不改 |
+# | deduplicator.flip_horizontal       | true                                | 镜像翻转                   | 去重参数 |
+# | deduplicator.rotation_angle        | 0.0                                 | 轻微旋转（度）             | 去重参数 |
+# | deduplicator.crop_percentage       | 0.02                                | 裁剪百分比（每边）          | 去重参数 |
+# | deduplicator.saturation            | 1.05                                | 饱和度倍率                 | 去重参数 |
+# | deduplicator.brightness            | 0.03                                | 亮度偏移                   | 去重参数 |
+# | deduplicator.contrast              | 1.05                                | 对比度倍率                 | 去重参数 |
+# | deduplicator.fade_in_frames        | 5                                   | 淡入帧数                   | 去重参数 |
+# | deduplicator.fade_out_frames       | 15                                  | 淡出帧数                   | 去重参数 |
+# | deduplicator.top_blur_percentage   | 0                                   | 顶部模糊条带 %             | 去重参数 |
+# | deduplicator.bottom_blur_percentage| 0                                   | 底部模糊条带 %             | 去重参数 |
+# | deduplicator.side_blur_percentage  | 0                                   | 侧边模糊条带 %             | 去重参数 |
+# | deduplicator.include_hzh           | false                               | 画中画叠加                 | 去重参数 |
+# | deduplicator.hzh_opacity           | 0.1                                 | 画中画透明度               | 去重参数 |
+# | deduplicator.hzh_scale             | 0.3                                 | 画中画缩放比例             | 去重参数 |
+# | deduplicator.hzh_video_file        | ''                                  | 画中画视频文件路径          | 去重参数 |
+# | deduplicator.include_watermark     | false                               | 是否加水印                 | 去重参数 |
+# | deduplicator.watermark_text        | ''                                  | 水印文字内容               | 去重参数 |
+# | deduplicator.replace_audio         | true                                | 是否替换音频（用 BGM）     | 去重参数 |
+# | deduplicator.bgm_dir               | ./assets/bgm                        | BGM 音频目录               | 去重参数 |
+# | deduplicator.random_bgm            | true                                | 随机选择 BGM               | 去重参数 |
+# | deduplicator.bgm_volume            | 0.15                                | BGM 音量                   | 去重参数 |
+# | deduplicator.ffmpeg_preset         | ultrafast                           | ffmpeg 编码预设            | 性能调优 |
+# | deduplicator.ffmpeg_crf            | 28                                  | CRF 画质值（0-51）          | 性能调优 |
+# | uploader.social_auto_upload_path   | ./social-auto-upload                | social-auto-upload 项目路径 | 必填     |
+# | uploader.account_name              | default                             | 上传账号标识名              | 必填     |
+# | uploader.headless                  | false                               | 浏览器无头模式             | 必填     |
+# | uploader.timeout                   | 300                                 | 上传超时（秒）             | 可选     |
+# | uploader.upload_delay              | 10                                  | 每个视频上传间隔（秒）      | 可选     |
+# | uploader.tiktok_tags               | []                                  | TikTok 上传标签列表         | 可选     |
+# | uploader.douyin_category           | ''                                  | 抖音上传分类 ID             | 可选     |
+# | database.db_path                   | ./state.db                          | SQLite 数据库路径           | 一般不改 |
+# | database.retention_days            | 0                                   | 记录保留天数（0=永久）      | 可选     |
+# | logging.level                      | INFO                                | 日志级别                   | 可选     |
+# | logging.log_dir                    | ./logs                              | 日志目录                   | 一般不改 |
+# -------------------------------------------------------------------------------------------------
+
+
+# 二、my_apps.yaml（根目录，f2 下载配置，共 18 项）
+# 注意：此文件被 .gitignore 屏蔽，IDE 中默认不可见
+# -------------------------------------------------------------------------------------------------
+# | 参数路径                          | 当前值示例                          | 说明                     | 必填/常用 |
+# -------------------------------------------------------------------------------------------------
+# | proxies.http://                    | ''                                  | HTTP 代理地址              | 重要     |
+# | proxies.https://                   | ''                                  | HTTPS 代理地址             | 重要     |
+# | douyin.headers.User-Agent          | Mozilla/5.0 ...                     | 抖音请求 UA                | 一般不改 |
+# | douyin.headers.Referer             | https://www.douyin.com/             | 抖音请求 Referer           | 一般不改 |
+# | douyin.cookie                      | __ac_nonce=...                      | 抖音下载 Cookie             | 必填     |
+# | douyin.proxies.http://             | ''                                  | 抖音专属代理               | 可选     |
+# | douyin.proxies.https://            | ''                                  | 抖音专属代理               | 可选     |
+# | douyin.music                       | 'no'                                | 是否下载音乐               | 可选     |
+# | douyin.cover                       | 'no'                                | 是否下载封面               | 可选     |
+# | douyin.desc                        | 'yes'                               | 是否下载描述               | 可选     |
+# | douyin.folderize                   | 'yes'                               | 是否按作者分目录            | 可选     |
+# | douyin.mode                        | post                                | 下载模式                   | 一般不改 |
+# | douyin.naming                      | '{aweme_id}'                        | 文件命名模板               | 可选     |
+# | tiktok.headers.User-Agent          | Mozilla/5.0 ...                     | TikTok 请求 UA             | 一般不改 |
+# | tiktok.headers.Referer             | https://www.tiktok.com/             | TikTok 请求 Referer        | 一般不改 |
+# | tiktok.cookie                      | _ttp=...                            | TikTok 下载 Cookie          | 条件必填 |
+# | tiktok.proxies.http://             | ''                                  | TikTok 专属代理             | 可选     |
+# | tiktok.proxies.https://            | ''                                  | TikTok 专属代理             | 可选     |
+# | tiktok.music / cover / desc ...    | 同 douyin                           | TikTok 对应选项             | 可选     |
+# -------------------------------------------------------------------------------------------------
+
+
+# 三、social-auto-upload/conf.py（子目录，上传项目配置，共 4 项）
+# -------------------------------------------------------------------------------------------------
+# | 参数                               | 当前值示例                          | 说明                     |
+# -------------------------------------------------------------------------------------------------
+# | BASE_DIR                           | Path(__file__).parent               | 项目根目录（自动计算）      |
+# | XHS_SERVER                         | http://127.0.0.1:11901              | 小红书服务地址              |
+# | LOCAL_CHROME_PATH                  | None                                | 本地 Chrome 浏览器路径      |
+# | LOCAL_CHROME_HEADLESS              | False                               | 上传默认无头模式            |
+# | DEBUG_MODE                         | True                                | 调试模式                   |
+# -------------------------------------------------------------------------------------------------
+
+
+# 四、dependency_checker.py（硬编码常量，共 1 项）
+# -------------------------------------------------------------------------------------------------
+# | 参数                               | 当前值示例                          | 说明                     |
+# -------------------------------------------------------------------------------------------------
+# | PROXY_URL                          | http://127.0.0.1:10808              | 全局代理地址（用于 pip/git）|
+# -------------------------------------------------------------------------------------------------
+
+
+# 五、命令行参数（main.py）
+# -------------------------------------------------------------------------------------------------
+# | 命令                               | 参数                                | 说明                     |
+# -------------------------------------------------------------------------------------------------
+# | python main.py run                 | 无                                  | 立即执行一次流水线         |
+# | python main.py schedule            | 无                                  | 启动定时后台调度           |
+# | python main.py login <platform>    | platform: douyin / tiktok           | 登录指定平台获取 Cookie     |
+# | python main.py stats               | 无                                  | 查看数据库统计             |
+# | python main.py history             | --limit N                           | 查看最近运行记录           |
+# -------------------------------------------------------------------------------------------------
+
+
+# ============================================
+# 问题总结
+# ============================================
+#
+# | 问题                 | 涉及参数                              | 当前不友好点                          |
+# |----------------------|---------------------------------------|---------------------------------------|
+# | Cookie 孤岛          | my_apps.yaml[douyin.cookie]           | 两处都要配，且 my_apps.yaml 被 gitignore |
+# |                      | vs config.yaml[uploader.account_name] |                                       |
+# | 代理不同步           | dependency_checker.PROXY_URL          | f2 下载可能不走代理                     |
+# |                      | vs my_apps.yaml.proxies               |                                       |
+# | 上传配置盲区         | social-auto-upload/conf.py            | setup_wizard 完全未覆盖                |
+# | 去重参数晦涩         | crop_percentage, ffmpeg_crf 等        | 普通用户看不懂数值含义                  |
+# | 缺少快捷修改         | 全部                                  | 改一项 URL 要手动改 YAML 或重跑 wizard  |
+#
