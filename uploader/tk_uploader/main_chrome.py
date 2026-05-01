@@ -17,6 +17,8 @@ async def cookie_auth(account_file):
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=LOCAL_CHROME_HEADLESS)
         context = await browser.new_context(storage_state=account_file)
+        context.set_default_navigation_timeout(120000)
+        context.set_default_timeout(60000)
         context = await set_init_script(context)
         # 创建一个新的页面
         page = await context.new_page()
@@ -61,6 +63,8 @@ async def get_tiktok_cookie(account_file):
         browser = await playwright.chromium.launch(**options)
         # Setup context however you like.
         context = await browser.new_context()  # Pass any options
+        context.set_default_navigation_timeout(120000)
+        context.set_default_timeout(60000)
         context = await set_init_script(context)
         # Pause the page, and start recording manually.
         page = await context.new_page()
@@ -147,8 +151,10 @@ class TiktokVideo(object):
         await file_chooser.set_files(self.file_path)
 
     async def upload(self, playwright: Playwright) -> None:
-        browser = await playwright.chromium.launch(headless=self.headless, executable_path=self.local_executable_path)
+        browser = await playwright.chromium.launch(headless=self.headless, **({"executable_path": self.local_executable_path} if self.local_executable_path else {}))
         context = await browser.new_context(storage_state=f"{self.account_file}")
+        context.set_default_navigation_timeout(120000)
+        context.set_default_timeout(60000)
         # context = await set_init_script(context)
         page = await context.new_page()
 
@@ -157,7 +163,7 @@ class TiktokVideo(object):
         await page.goto("https://www.tiktok.com/tiktokstudio/upload")
         tiktok_logger.info(f'[+]Uploading-------{self.title}.mp4')
 
-        await page.wait_for_url("https://www.tiktok.com/tiktokstudio/upload", timeout=10000)
+        await page.wait_for_url("https://www.tiktok.com/tiktokstudio/upload", timeout=60000)
 
         try:
             await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
@@ -242,12 +248,20 @@ class TiktokVideo(object):
 
     async def change_language(self, page):
         # set the language to english
-        await page.goto("https://www.tiktok.com")
-        await page.wait_for_load_state('domcontentloaded')
-        await page.wait_for_selector('[data-e2e="nav-more-menu"]')
-        # 已经设置为英文, 省略这个步骤
-        if await page.locator('[data-e2e="nav-more-menu"]').text_content() == "More":
+        await page.goto("https://www.tiktok.com", timeout=120000)
+        await page.wait_for_load_state('domcontentloaded', timeout=60000)
+        try:
+            await page.wait_for_selector('[data-e2e="nav-more-menu"]', timeout=30000)
+        except Exception:
+            print("[change_language] nav-more-menu not found, skipping language check")
             return
+        # 已经设置为英文, 省略这个步骤
+        try:
+            menu_text = await page.locator('[data-e2e="nav-more-menu"]').text_content()
+            if menu_text == "More":
+                return
+        except Exception:
+            pass
 
         await page.locator('[data-e2e="nav-more-menu"]').click()
         await page.locator('[data-e2e="language-select"]').click()

@@ -16,6 +16,8 @@ async def cookie_auth(account_file):
     async with async_playwright() as playwright:
         browser = await playwright.firefox.launch(headless=LOCAL_CHROME_HEADLESS)
         context = await browser.new_context(storage_state=account_file)
+        context.set_default_navigation_timeout(120000)
+        context.set_default_timeout(60000)
         context = await set_init_script(context)
         # 创建一个新的页面
         page = await context.new_page()
@@ -144,13 +146,15 @@ class TiktokVideo(object):
     async def upload(self, playwright: Playwright) -> None:
         browser = await playwright.firefox.launch(headless=self.headless)
         context = await browser.new_context(storage_state=f"{self.account_file}")
+        context.set_default_navigation_timeout(120000)
+        context.set_default_timeout(60000)
         context = await set_init_script(context)
         page = await context.new_page()
 
         await page.goto("https://www.tiktok.com/creator-center/upload")
         tiktok_logger.info(f'[+]Uploading-------{self.title}.mp4')
 
-        await page.wait_for_url("https://www.tiktok.com/tiktokstudio/upload", timeout=10000)
+        await page.wait_for_url("https://www.tiktok.com/tiktokstudio/upload", timeout=60000)
 
         try:
             await page.wait_for_selector('iframe[data-tt="Upload_index_iframe"], div.upload-container', timeout=10000)
