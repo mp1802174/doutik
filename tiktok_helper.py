@@ -46,7 +46,7 @@ async def dismiss_overlays(page, retries: int = 3):
             ('button >> text=Accept',     'accept'),
             ('button >> text=OK',         'ok'),
             ('button >> text=Continue',   'continue'),
-            ('button >> text=Confirm',    'confirm'),
+            # 不加 Confirm/Discard：这两个是"取消上传"确认框上的危险按钮
             ('button[aria-label="Close"]', 'close'),
             ('button[data-action="skip"]','skip'),
             ('button[data-action="close"]','close_action'),
@@ -72,7 +72,8 @@ async def dismiss_overlays(page, retries: int = 3):
             clicked_label = await page.evaluate("""
                 () => {
                     const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-                    const texts = ['Turn on','Cancel','Got it','Allow','Accept','OK','Continue','Confirm'];
+                    // 注意：不要包含 'Cancel' / 'Confirm'，避免误点上传进度条的 Cancel 按钮导致取消上传
+                    const texts = ['Turn on','Got it','Allow','Accept','OK','Continue'];
                     for (const t of texts) {
                         const btn = btns.find(b => {
                             const txt = (b.innerText || b.textContent || '').trim();
@@ -137,17 +138,22 @@ class RobustTiktokVideo(TiktokVideo):
     """覆盖 upload 方法，在 add_title_tags 前自动关闭弹窗"""
 
     async def upload(self, playwright: Playwright) -> None:
-        # ★ 启动 VPS 真实 Chrome（指纹更真实，避免被检测为自动化）
-        browser = await playwright.chromium.launch(
+        # ★ 使用持久化 Chrome Profile，让 WASM/JS 缓存跨次保留，加快上传速度
+        context = await playwright.chromium.launch_persistent_context(
+            user_data_dir=r"D:\XZ\doutik\chrome_profile",
             headless=False,
             executable_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
             args=["--disable-blink-features=AutomationControlled"],
-        )
-        # ★ 使用代理（VPS 上 Clash 127.0.0.1:7897），避免新加坡 IP 被风控
-        context = await browser.new_context(
-            storage_state=str(self.account_file),
             proxy={"server": "http://127.0.0.1:7897"},
         )
+        # 从 account_file 注入 cookies（launch_persistent_context 不支持 storage_state 参数）
+        _af = Path(self.account_file)
+        if _af.exists():
+            import json as _json
+            state = _json.loads(_af.read_text(encoding="utf-8"))
+            cookies = state.get("cookies", [])
+            if cookies:
+                await context.add_cookies(cookies)
         # ★ 加载 stealth 反检测脚本
         context = await set_init_script(context)
         context.set_default_navigation_timeout(120000)
@@ -247,34 +253,30 @@ class RobustTiktokVideo(TiktokVideo):
         print("[tiktok_helper] Cookie 已更新")
         await asyncio.sleep(2)
         await context.close()
-        await browser.close()
 
     async def detect_upload_status(self, page):
-        """覆盖父类 detect_upload_status：添加 300 秒超时，避免大视频上传时死循环"""
-        max_wait = 300
-        elapsed = 0
-        while elapsed < max_wait:
+        """等待 TikTok 显示 '已上传' / 'Uploaded' 文字，这是上传真正完成的标志。最多等 300 秒。"""
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + 600  # 最多等 10 分钟（首次需下载 WASM 模块）
+        while loop.time() < deadline:
             try:
-                btn = self.locator_base.locator('div.button-group > button >> text=Post')
-                disabled = await btn.get_attribute("disabled")
-                if disabled is None:
+                txt = await self.locator_base.evaluate(
+                    "el => el.innerText", timeout=3000
+                )
+                # 中文：已上传   英文：Uploaded
+                if "已上传" in txt or "Uploaded" in txt:
                     print("[tiktok_helper] ✅ video uploaded (detected)")
-                    break
-                else:
-                    print(f"[tiktok_helper] 视频上传中... ({elapsed}s / {max_wait}s)")
-                    await asyncio.sleep(2)
-                    elapsed += 2
-                    # 检测上传错误
-                    if await self.locator_base.locator(
-                            'button[aria-label="Select file"]').count():
-                        print("[tiktok_helper] 检测到上传错误，尝试重试...")
-                        await self.handle_upload_error(page)
+                    return
+                remaining = int(deadline - loop.time())
+                if remaining % 30 == 0:
+                    print(f"[tiktok_helper] 等待上传完成... 剩余 {remaining}s | iframe: {txt[:120]!r}")
+                if await self.locator_base.locator('button[aria-label="Select file"]').count():
+                    print("[tiktok_helper] 检测到上传错误，尝试重试...")
+                    await self.handle_upload_error(page)
             except Exception as e:
-                print(f"[tiktok_helper] 检测上传状态异常: {e!s:.80}")
-                await asyncio.sleep(2)
-                elapsed += 2
-        else:
-            print(f"[tiktok_helper] WARNING: 视频上传检测超时 ({max_wait}s)，强制继续...")
+                print(f"[tiktok_helper] 检测上传状态: {e!s:.60}")
+            await asyncio.sleep(2)
+        print("[tiktok_helper] WARNING: 视频上传检测超时（300s），强制继续...")
 
     async def _poll_for_rejection(self, page, total_seconds: int = 12) -> bool:
         """
@@ -336,57 +338,102 @@ class RobustTiktokVideo(TiktokVideo):
         await dismiss_overlays(page, retries=3)
         await page.wait_for_timeout(500)
 
-        publish_button = self.locator_base.locator('div.button-group button').nth(0)
+        # 诊断：打印 button-group 里所有按钮文字
+        try:
+            all_btns = self.locator_base.locator('div.button-group button')
+            cnt = await all_btns.count()
+            print(f"[tiktok_helper] button-group 按钮数: {cnt}")
+            for i in range(cnt):
+                txt = await all_btns.nth(i).inner_text(timeout=2000)
+                dis = await all_btns.nth(i).get_attribute("disabled", timeout=2000)
+                print(f"[tiktok_helper]   btn[{i}] text={txt!r} disabled={dis!r}")
+        except Exception as e:
+            print(f"[tiktok_helper] 诊断异常: {e!s:.80}")
 
-        # 直接使用 force=True 点击，绕过 TUXModal 遮挡
-        for attempt in range(5):
-            try:
-                if await publish_button.count():
-                    await publish_button.click(force=True, timeout=5000)
-                    print(f"[tiktok_helper] Publish 按钮 force click (attempt {attempt+1})")
+        # 按文本匹配 Post 按钮，避免选到 "Save draft"
+        publish_button = self.locator_base.locator('div.button-group button:has-text("Post")')
 
-                # 检查是否跳转到内容管理页（高清视频处理可能需要较长时间）
-                try:
-                    await page.wait_for_url(
-                        "https://www.tiktok.com/tiktokstudio/content", timeout=120000
-                    )
-                    print("[tiktok_helper] ✅ 视频发布成功")
-                    return
-                except Exception:
-                    # 还没跳转，可能弹窗又弹出来了
-                    print(f"[tiktok_helper] 发布中... (attempt {attempt+1})")
-                    await dismiss_overlays(page, retries=2)
+        # 尝试 1：force click
+        try:
+            btn_cnt = await publish_button.count()
+            print(f"[tiktok_helper] Post 按钮匹配数: {btn_cnt}")
+            if btn_cnt:
+                await publish_button.click(force=True, timeout=5000)
+                print("[tiktok_helper] Publish 按钮 force click")
+        except Exception as e:
+            print(f"[tiktok_helper] 发布点击异常: {e!s:.80}")
 
-            except Exception as e:
-                print(f"[tiktok_helper] 发布点击异常 (attempt {attempt+1}): {e!s:.80}")
-                await dismiss_overlays(page, retries=2)
+        # 点击后等 3 秒，读取页面文本诊断
+        await asyncio.sleep(3)
+        try:
+            page_text = await page.evaluate("() => document.body ? document.body.innerText.slice(0, 500) : ''")
+            print(f"[tiktok_helper] 点击后页面文本(前500): {page_text!r}")
+        except Exception as e:
+            print(f"[tiktok_helper] 读取页面文本失败: {e!s:.60}")
+        try:
+            iframe_text = await self.locator_base.evaluate("el => el.innerText.slice(0, 500)")
+            print(f"[tiktok_helper] 点击后iframe文本(前500): {iframe_text!r}")
+        except Exception as e:
+            print(f"[tiktok_helper] 读取iframe文本失败: {e!s:.60}")
 
-            await asyncio.sleep(0.5)
+        # 等待页面离开上传页，或出现发布成功提示（最多 5 分钟）
+        publish_ok = await self._wait_for_publish_success(page, timeout=300)
+        if publish_ok:
+            return
 
-        # 最终尝试：JS 直接点击
-        print("[tiktok_helper] 最终方案：JS 直接点击 Publish 按钮")
+        # 尝试 2：JS 直接点击后再等
+        await dismiss_overlays(page, retries=2)
         try:
             await page.evaluate("""
                 const btn = document.querySelector('div.button-group button[data-e2e="post_video_button"]');
                 if (btn) btn.click();
             """)
-            await page.wait_for_url(
-                "https://www.tiktok.com/tiktokstudio/content", timeout=120000
-            )
-            print("[tiktok_helper] ✅ JS 点击发布成功")
-            return
+            print("[tiktok_helper] JS 直接点击 Publish")
         except Exception as e:
-            print(
-                f"[tiktok_helper] JS 点击也失败: {e!s:.80}",
-                file=sys.stderr,
-            )
+            print(f"[tiktok_helper] JS 点击异常: {e!s:.80}", file=sys.stderr)
 
-        # ★ 所有发布尝试均失败，必须退出码 1，不能静默返回造成假成功
+        publish_ok = await self._wait_for_publish_success(page, timeout=300)
+        if publish_ok:
+            return
+
+        # ★ 所有发布尝试均失败，退出码 1
         print(
             "[tiktok_helper] ERROR: 所有 Publish 尝试均失败，视频未发布到 TikTok",
             file=sys.stderr,
         )
         sys.exit(1)
+
+    async def _wait_for_publish_success(self, page, timeout: int = 300) -> bool:
+        """等待发布成功：离开上传页 OR 出现成功 toast。返回 True=成功"""
+        start = asyncio.get_event_loop().time()
+        last_log = start
+        while asyncio.get_event_loop().time() - start < timeout:
+            url = page.url
+            now = asyncio.get_event_loop().time()
+            # 每 15 秒打印一次当前 URL
+            if now - last_log >= 15:
+                print(f"[tiktok_helper] 等待发布... URL={url}")
+                last_log = now
+            # 已离开上传页，说明发布成功
+            if "tiktokstudio/upload" not in url:
+                print(f"[tiktok_helper] ✅ 视频发布成功，当前页: {url}")
+                return True
+            # 检测成功 toast / 提示文字
+            try:
+                found = await page.evaluate("""
+                    () => {
+                        const txt = document.body ? document.body.innerText : '';
+                        return /successfully posted|video posted|post scheduled|Your video has been/i.test(txt);
+                    }
+                """)
+                if found:
+                    print("[tiktok_helper] ✅ 检测到发布成功提示")
+                    return True
+            except Exception:
+                pass
+            await asyncio.sleep(2)
+        print(f"[tiktok_helper] 等待发布成功超时 ({timeout}s)，最终 URL={page.url}")
+        return False
 
     async def _robust_add_title_tags(self, page):
         """带弹窗重试的标题/标签填写"""
