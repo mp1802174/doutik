@@ -1,6 +1,6 @@
 pipeline:
   direction: douyin_to_tiktok
-  batch_size: 5
+  batch_size: 10
   schedule_interval_minutes: 300
   cleanup_after_upload: true
   timezone: Asia/Shanghai
