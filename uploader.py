@@ -323,7 +323,7 @@ class SocialAutoUploader:
                 cwd=str(self.saa_path),
                 capture_output=True,
                 text=True,
-                timeout=self.timeout,
+                timeout=900,  # TikTok 实际上传超过 5 分钟，固定 15 分钟上限
                 encoding="utf-8",
                 errors="replace",
             )
