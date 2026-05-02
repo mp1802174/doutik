@@ -249,6 +249,33 @@ class RobustTiktokVideo(TiktokVideo):
         await context.close()
         await browser.close()
 
+    async def detect_upload_status(self, page):
+        """覆盖父类 detect_upload_status：添加 300 秒超时，避免大视频上传时死循环"""
+        max_wait = 300
+        elapsed = 0
+        while elapsed < max_wait:
+            try:
+                btn = self.locator_base.locator('div.button-group > button >> text=Post')
+                disabled = await btn.get_attribute("disabled")
+                if disabled is None:
+                    print("[tiktok_helper] ✅ video uploaded (detected)")
+                    break
+                else:
+                    print(f"[tiktok_helper] 视频上传中... ({elapsed}s / {max_wait}s)")
+                    await asyncio.sleep(2)
+                    elapsed += 2
+                    # 检测上传错误
+                    if await self.locator_base.locator(
+                            'button[aria-label="Select file"]').count():
+                        print("[tiktok_helper] 检测到上传错误，尝试重试...")
+                        await self.handle_upload_error(page)
+            except Exception as e:
+                print(f"[tiktok_helper] 检测上传状态异常: {e!s:.80}")
+                await asyncio.sleep(2)
+                elapsed += 2
+        else:
+            print(f"[tiktok_helper] WARNING: 视频上传检测超时 ({max_wait}s)，强制继续...")
+
     async def _poll_for_rejection(self, page, total_seconds: int = 12) -> bool:
         """
         TikTok 拒绝提示是 toast 形式：弹出 → 消失 → 再次弹出，循环数秒。
